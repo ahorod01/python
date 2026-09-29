@@ -3,7 +3,8 @@ Copy data from a Microsoft Access database (.accdb / .mdb) to Microsoft SQL Serv
 
 Requirements (Windows):
     pip install pyodbc
-    - Microsoft Access Database Engine (ODBC driver) matching your Python bitness (32/64-bit)
+    - Microsoft Access Database Engine (ODBC driver) matching your Python 
+      bitness (32/64-bit)
     - "ODBC Driver 17 or 18 for SQL Server"
 
 Tables are created in the HT schema by default (created if missing).
