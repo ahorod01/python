@@ -9,14 +9,23 @@ Requirements (Windows):
 Tables are created in the HT schema by default (created if missing).
 Use --schema to override.
 
-Authentication is SQL Server login (--user / --password). If --password is
-omitted, the SQLSERVER_PASSWORD environment variable is used, otherwise you
-are prompted securely.
+Authentication (choose one):
+    --trusted                    Windows (trusted) authentication, using the
+                                 account you are logged in as.
+    --user NAME [--password PW]  SQL Server login. If --password is omitted,
+                                 the SQLSERVER_PASSWORD environment variable is
+                                 used, otherwise you are prompted securely.
 
 Examples:
+    # Windows / trusted authentication
     python access_to_sqlserver.py --access "C:\\data\\mydb.accdb" ^
-        --server localhost --database TargetDB --user myuser
+        --server localhost --database TargetDB --trusted
 
+    # SQL user (prompts for password)
+    python access_to_sqlserver.py --access "C:\\data\\mydb.accdb" ^
+        --server myserver --database TargetDB --user myuser
+
+    # SQL user with options
     python access_to_sqlserver.py --access "C:\\data\\mydb.accdb" ^
         --server myserver --database TargetDB --user myuser --password secret ^
         --tables Customers Orders --if-exists replace
@@ -111,10 +120,15 @@ def odbc_escape(value: str) -> str:
 def connect_sqlserver(args) -> pyodbc.Connection:
     driver = pick_sqlserver_driver(args.driver)
     print(f"Using SQL Server driver: {driver}")
+    if args.trusted:
+        print("Authenticating with Windows (trusted) credentials")
+        auth = "Trusted_Connection=yes;"
+    else:
+        print(f"Authenticating as SQL user {args.user}")
+        auth = f"UID={odbc_escape(args.user)};PWD={odbc_escape(args.password)};"
     conn_str = (
         f"DRIVER={{{driver}}};SERVER={args.server};DATABASE={args.database};"
-        f"UID={odbc_escape(args.user)};PWD={odbc_escape(args.password)};"
-        "TrustServerCertificate=yes;"
+        f"{auth}TrustServerCertificate=yes;"
     )
     return pyodbc.connect(conn_str)
 
@@ -215,13 +229,18 @@ def main():
     p.add_argument("--access", required=True, help="Path to .accdb/.mdb file")
     p.add_argument("--server", required=True, help="SQL Server host[\\instance][,port]")
     p.add_argument("--database", required=True, help="Target SQL Server database")
-    p.add_argument("--schema", default="dbo", help="Target schema (default: dbo)")
+    p.add_argument("--schema", default="HT", help="Target schema (default: HT)")
     p.add_argument(
         "--driver",
         default=None,
         help="SQL Server ODBC driver name (default: auto-detect newest installed)",
     )
-    p.add_argument("--user", required=True, help="SQL Server login name")
+    p.add_argument(
+        "--trusted",
+        action="store_true",
+        help="Use Windows (trusted) authentication instead of a SQL login",
+    )
+    p.add_argument("--user", help="SQL Server login name (SQL authentication)")
     p.add_argument(
         "--password",
         help="SQL Server password (if omitted, uses SQLSERVER_PASSWORD env var, "
@@ -236,10 +255,15 @@ def main():
     )
     args = p.parse_args()
 
-    if not args.password:
-        args.password = os.environ.get("SQLSERVER_PASSWORD") or getpass.getpass(
-            f"Password for {args.user}: "
-        )
+    if args.trusted and (args.user or args.password):
+        p.error("--trusted cannot be combined with --user/--password")
+    if not args.trusted:
+        if not args.user:
+            p.error("Provide --trusted (Windows auth) or --user (SQL auth)")
+        if not args.password:
+            args.password = os.environ.get("SQLSERVER_PASSWORD") or getpass.getpass(
+                f"Password for {args.user}: "
+            )
 
     try:
         src = connect_access(args.access)
